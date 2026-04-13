@@ -1,18 +1,26 @@
-# AMR Safety Guard System
+# AMR Safety Guard
 
-An autonomous mobile robot (AMR) safety system that patrols an industrial environment, detects humans in danger zones using YOLOv8, and triggers an emergency stop.
+Autonomous mobile robot safety platform for industrial environments. The robot patrols a facility, enforces restricted keepout zones via Nav2 costmaps, and triggers an emergency stop when YOLOv8 detects personnel in danger areas.
+
+The system is split across two machines: a laptop running Gazebo Harmonic simulation and navigation, and an NVIDIA Jetson Orin Nano running real-time person detection. Both communicate over ROS2 topics.
 
 ## System Architecture
 
 ```
-Gazebo Simulation (Laptop)          Jetson Orin Nano
-├── Industrial world                ├── USB Webcam
-├── Custom AMR robot (URDF)         ├── YOLOv8n person detection
-├── SLAM-generated map              ├── ROS2 Humble (Docker)
-├── Nav2 autonomous patrol          └── amr_perception package
-├── Keepout zones (danger areas)
-├── Zone monitor
-└── Emergency stop node
+┌──────────────────────────────┐    ROS2 (LAN)    ┌──────────────────────────┐
+│      Laptop  (Ubuntu 24.04)  │ ◄──────────────► │   Jetson Orin Nano       │
+│                              │                  │                          │
+│  Gazebo Harmonic             │                  │  YOLOv8n — CUDA 12.6     │
+│  ├── industrial_world.sdf    │                  │  USB webcam              │
+│  ├── amr_robot.urdf.xacro    │                  │  ROS2 Humble (Docker)    │
+│  └── SLAM-generated map      │                  │  /person_detected topic  │
+│                              │                  └──────────────────────────┘
+│  Nav2 + SLAM Toolbox         │
+│  ├── 4-waypoint patrol loop  │
+│  ├── Keepout zone costmap    │
+│  ├── Zone violation monitor  │
+│  └── Emergency stop handler  │
+└──────────────────────────────┘
 ```
 
 ## Features
@@ -39,27 +47,35 @@ Gazebo Simulation (Laptop)          Jetson Orin Nano
 ## Package Structure
 
 ```
-amr_safety_guard/
-├── amr_safety_guard/
-│   ├── patrol_node.py        # Autonomous waypoint patrol (Nav2 action client)
-│   ├── zone_monitor.py       # Danger zone detection via /odom
-│   ├── emergency_stop.py     # Stops robot 5s on person detection
-│   ├── person_detector.py    # YOLOv8 inference on camera feed
-│   └── webcam_publisher.py   # Publishes webcam frames to ROS2
-├── launch/
-│   ├── navigation.launch.py  # Full system launch
-│   ├── simulation.launch.py  # Gazebo + robot spawn
-│   ├── slam.launch.py        # SLAM mapping
-│   └── rsp.launch.py         # Robot state publisher
-├── config/
-│   ├── nav2_params.yaml
-│   └── mapper_params_online_async.yaml
-├── maps/                     # SLAM-generated industrial map + keepout mask
-├── urdf/                     # Custom AMR robot URDF/xacro
-└── worlds/                   # Industrial Gazebo world
-
-jetson/
-└── Dockerfile.perception     # Jetson container: PyTorch + ROS2 Humble + YOLOv8
+amr-safety-guard/
+├── src/amr_safety_guard/
+│   ├── amr_safety_guard/
+│   │   ├── patrol_node.py        # Waypoint patrol — Nav2 action client, goal sequencing
+│   │   ├── zone_monitor.py       # Odometry-based zone violation detector
+│   │   ├── keepout_mask.py       # Keepout zone costmap filter configuration
+│   │   ├── emergency_stop.py     # Halts robot 5 s on person detection, then resumes
+│   │   ├── person_detector.py    # YOLOv8n inference, publishes /person_detected
+│   │   └── webcam_publisher.py   # Streams webcam to ROS2 image topic
+│   ├── launch/
+│   │   ├── navigation.launch.py  # Full system launch (Nav2 + patrol + monitoring)
+│   │   ├── simulation.launch.py  # Gazebo Harmonic + robot spawn
+│   │   ├── slam.launch.py        # SLAM mapping mode
+│   │   └── rsp.launch.py         # Robot state publisher only
+│   ├── config/
+│   │   ├── nav2_params.yaml                   # Nav2 planner + costmap config
+│   │   └── mapper_params_online_async.yaml    # SLAM Toolbox parameters
+│   ├── maps/
+│   │   ├── industrial_map.yaml   # Pre-generated SLAM map
+│   │   └── keepout_mask.yaml     # Keepout zone overlay mask
+│   ├── urdf/
+│   │   └── amr_robot.urdf.xacro  # Custom AMR robot model
+│   ├── worlds/
+│   │   └── industrial_world.sdf  # Gazebo Harmonic simulation world
+│   └── rviz/
+│       └── rviz_config.rviz      # RViz2 visualisation layout
+├── jetson/
+│   └── Dockerfile.perception     # Jetson container: ROS2 Humble + PyTorch + YOLOv8
+└── README.md
 ```
 
 ## Running the Simulation
@@ -97,7 +113,13 @@ ros2 run amr_perception person_detector
 
 ## Hardware
 
-- Gaming laptop (WSL2 Ubuntu 24.04) — simulation and navigation
-- NVIDIA Jetson Orin Nano — real-time person detection
-- USB webcam — camera input for YOLOv8
-- Arduino Uno + L298N — hardware emergency stop (ongoing)
+| Device | Role |
+|---|---|
+| Gaming laptop (WSL2 Ubuntu 24.04) | Simulation, navigation, map serving |
+| NVIDIA Jetson Orin Nano | Real-time YOLOv8n inference (CUDA) |
+| USB webcam | Camera input for person detection |
+| Arduino Uno + L298N | Hardware-level emergency stop (in progress) |
+
+## License
+
+MIT
