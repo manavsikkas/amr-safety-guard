@@ -1,0 +1,45 @@
+# AMR Perception Container — PyTorch + ROS2 Humble + YOLOv8
+# Base: NVIDIA l4t-pytorch r36.4.0 (Ubuntu 22.04, CUDA 12.6, PyTorch 2.4)
+FROM dustynv/l4t-pytorch:r36.4.0
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV ROS_DISTRO=humble
+ENV ROS_DOMAIN_ID=42
+
+# --- ROS2 Humble apt repo ---
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl gnupg2 \
+ && curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
+      -o /usr/share/keyrings/ros-archive-keyring.gpg \
+ && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] \
+      http://packages.ros.org/ros2/ubuntu jammy main" \
+      > /etc/apt/sources.list.d/ros2.list \
+ && rm -rf /var/lib/apt/lists/*
+
+# --- ROS2 Humble base + cv_bridge + vision msgs ---
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ros-humble-ros-base \
+    ros-humble-cv-bridge \
+    ros-humble-vision-msgs \
+    ros-humble-image-transport \
+    ros-humble-usb-cam \
+    python3-colcon-common-extensions \
+ && rm -rf /var/lib/apt/lists/*
+
+# --- Ultralytics YOLOv8 ---
+# --index-url forces PyPI (base image pip defaults to NVIDIA's Jetson-only index)
+# --no-deps prevents overwriting the Jetson-optimized PyTorch from the base image
+RUN pip3 install --no-cache-dir --no-deps \
+    --index-url https://pypi.org/simple ultralytics \
+ && pip3 install --no-cache-dir \
+    --index-url https://pypi.org/simple \
+    matplotlib pyyaml tqdm psutil pandas seaborn thop
+
+# --- Shell setup ---
+# bashrc covers interactive shells; bash_env covers non-interactive (docker run bash -c "...")
+RUN echo "source /opt/ros/humble/setup.bash" >> /root/.bashrc \
+ && echo "source /opt/ros/humble/setup.bash" >> /root/.bash_env
+ENV BASH_ENV=/root/.bash_env
+
+WORKDIR /workspace
+CMD ["/bin/bash"]
