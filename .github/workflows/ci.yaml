@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-lint:
+    runs-on: ubuntu-24.04
+    container:
+      image: ros:jazzy-ros-base
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          apt-get update
+          rosdep update
+          rosdep install --from-paths src --ignore-src -r -y
+
+      - name: Build
+        run: |
+          . /opt/ros/jazzy/setup.sh
+          colcon build --packages-select amr_safety_guard
+
+      - name: Lint (ament_flake8)
+        run: |
+          . /opt/ros/jazzy/setup.sh
+          ament_flake8 src/amr_safety_guard/amr_safety_guard/
+
+      - name: Lint (ament_copyright)
+        run: |
+          . /opt/ros/jazzy/setup.sh
+          ament_copyright src/amr_safety_guard/
+
+  jetson-docker-build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Jetson perception Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./jetson
+          file: ./jetson/Dockerfile.perception
+          push: false
+          tags: amr-safety-guard/perception:latest
